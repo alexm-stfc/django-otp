@@ -310,25 +310,23 @@ class LoginViewTestCase(TestCase):
         self.assertContains(response, 'OTP Token:')
 
         device = self.bob.staticdevice_set.get()
-        token = device.token_set.get()
         response = self.client.post(reverse('otpadmin:login'), data={
             'username': self.bob.get_username(),
             'password': 'password',
             'otp_device': device.persistent_id,
-            'otp_token': token.token,
+            'otp_token': self.bob.get_username(),
             'next': '/',
         })
         self.assertRedirects(response, '/')
 
     def test_authenticate(self):
         device = self.alice.staticdevice_set.get()
-        token = device.token_set.get()
 
         params = {
             'username': self.alice.get_username(),
             'password': 'password',
             'otp_device': device.persistent_id,
-            'otp_token': token.token,
+            'otp_token': self.alice.get_username(),
             'next': '/',
         }
 
@@ -340,11 +338,10 @@ class LoginViewTestCase(TestCase):
 
     def test_verify(self):
         device = self.alice.staticdevice_set.get()
-        token = device.token_set.get()
 
         params = {
             'otp_device': device.persistent_id,
-            'otp_token': token.token,
+            'otp_token': self.alice.get_username(),
             'next': '/',
         }
 
@@ -378,7 +375,7 @@ class ConcurrencyTestCase(TransactionTestCase):
 
                 self.user = user
                 self.device_id = device_id
-                self.token = token
+                self.token = 'valid'
 
                 self.verified = None
 
