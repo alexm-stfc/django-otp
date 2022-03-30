@@ -2,6 +2,7 @@ from base64 import b32encode
 from os import urandom
 
 from django.conf import settings
+from django.contrib.auth.hashers import get_hasher, make_password
 from django.db import models
 
 from django_otp.models import Device, ThrottlingMixin
@@ -24,8 +25,16 @@ class StaticDevice(ThrottlingMixin, Device):
         The RelatedManager for our tokens.
 
     """
+
+    salt = models.CharField(max_length=128, default=create_salt, null=True)
+
+    @staticmethod
+    def create_salt():
+        hasher = get_hasher()
+        return hasher.salt()
+
     def get_throttle_factor(self):
-        return getattr(settings, 'OTP_STATIC_THROTTLE_FACTOR', 1)
+        return getattr(settings, "OTP_STATIC_THROTTLE_FACTOR", 1)
 
     def verify_token(self, token):
         verify_allowed, _ = self.verify_is_allowed()
@@ -39,7 +48,12 @@ class StaticDevice(ThrottlingMixin, Device):
         else:
             match = None
 
-        return (match is not None)
+        return match is not None
+
+    def create_token(self):
+        token = make_password(32encode(urandom(5)).decode("utf-8").lower(), salt=self.salt)
+        self.token_set.create(token=token)
+
 
 
 class StaticToken(models.Model):
@@ -54,7 +68,10 @@ class StaticToken(models.Model):
 
         *CharField*: A random string up to 16 characters.
     """
-    device = models.ForeignKey(StaticDevice, related_name='token_set', on_delete=models.CASCADE)
+
+    device = models.ForeignKey(
+        StaticDevice, related_name="token_set", on_delete=models.CASCADE
+    )
     token = models.CharField(max_length=16, db_index=True)
 
     @staticmethod
@@ -65,4 +82,4 @@ class StaticToken(models.Model):
         :rtype: bytes
 
         """
-        return b32encode(urandom(5)).decode('utf-8').lower()
+        return b32encode(urandom(5)).decode("utf-8").lower()
