@@ -1,4 +1,5 @@
 from django.contrib.admin import AdminSite
+from django.contrib.auth.hashers import make_password
 from django.contrib.auth.models import Permission
 from django.contrib.contenttypes.models import ContentType
 from django.db import IntegrityError
@@ -62,8 +63,11 @@ class LibTest(TestCase):
 
     def test_add_static_token_specific(self):
         statictoken = add_static_token('alice', 'token')
+        hashedtoken = make_password(
+            "token", statictoken.device.salt, statictoken.device.hash_algorithm
+        )
 
-        self.assertEqual(statictoken.token, 'token')
+        self.assertEqual(statictoken.token, hashedtoken)
 
 
 class AuthFormTest(TestCase):
@@ -184,8 +188,10 @@ class ThrottlingTestCase(ThrottlingTestMixin, TestCase):
             self.device.token_set.create(token='valid2')
             self.device.token_set.create(token='valid3')
 
+        self.valid_tokens = ['valid1', 'valid2', 'valid3']
+
     def valid_token(self):
-        return self.device.token_set.first().token
+        return self.valid_tokens.pop()
 
     def invalid_token(self):
         return 'bogus'
