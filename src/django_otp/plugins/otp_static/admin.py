@@ -10,6 +10,9 @@ class StaticTokenInline(admin.TabularInline):
     model = StaticToken
     extra = 0
 
+    def has_change_permission(self, request, obj=None):
+        return False
+
 
 class StaticDeviceAdmin(admin.ModelAdmin):
     """

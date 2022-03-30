@@ -17,7 +17,7 @@ class StaticDevice(ThrottlingMixin, Device):
     device is lost or unavailable. They can be consumed in any order; each
     token will be removed from the database as soon as it is used.
 
-    This model has no fields of its own, but serves as a container for
+    This model has shared salt and algorithm fields, used to hash contained
     :class:`StaticToken` objects.
 
     .. attribute:: token_set
@@ -26,19 +26,25 @@ class StaticDevice(ThrottlingMixin, Device):
 
     """
 
-    salt = models.CharField(max_length=128, default=create_salt, null=True)
+    salt = models.CharField(max_length=128, null=True)
+    hash_algorithm = models.CharField(max_length=64, null=True)
 
-    @staticmethod
-    def create_salt():
-        hasher = get_hasher()
-        return hasher.salt()
+    def save(self, *args, **kwargs):
+        """Create a salt on save, using the default password hasher."""
+        if self._state.adding:
+            hasher = get_hasher()
+            self.hash_algorithm = hasher.algorithm
+            self.salt = hasher.salt()
+        super().save(*args, **kwargs)
 
     def get_throttle_factor(self):
-        return getattr(settings, "OTP_STATIC_THROTTLE_FACTOR", 1)
+        return getattr(settings, 'OTP_STATIC_THROTTLE_FACTOR', 1)
 
     def verify_token(self, token):
         verify_allowed, _ = self.verify_is_allowed()
         if verify_allowed:
+            if self.salt is not None:
+                token = make_password(token, self.salt, self.hash_algorithm)
             match = self.token_set.filter(token=token).first()
             if match is not None:
                 match.delete()
@@ -48,12 +54,7 @@ class StaticDevice(ThrottlingMixin, Device):
         else:
             match = None
 
-        return match is not None
-
-    def create_token(self):
-        token = make_password(32encode(urandom(5)).decode("utf-8").lower(), salt=self.salt)
-        self.token_set.create(token=token)
-
+        return (match is not None)
 
 
 class StaticToken(models.Model):
@@ -69,10 +70,8 @@ class StaticToken(models.Model):
         *CharField*: A random string up to 16 characters.
     """
 
-    device = models.ForeignKey(
-        StaticDevice, related_name="token_set", on_delete=models.CASCADE
-    )
-    token = models.CharField(max_length=16, db_index=True)
+    device = models.ForeignKey(StaticDevice, related_name='token_set', on_delete=models.CASCADE)
+    token = models.CharField(max_length=128, db_index=True)
 
     @staticmethod
     def random_token():
@@ -82,4 +81,12 @@ class StaticToken(models.Model):
         :rtype: bytes
 
         """
-        return b32encode(urandom(5)).decode("utf-8").lower()
+        return b32encode(urandom(5)).decode('utf-8').lower()
+
+    def save(self, *args, **kwargs):
+        """Hash the token on save, if the device has a salt."""
+        if self._state.adding and (self.device.salt is not None):
+            self.token = make_password(
+                self.token, salt=self.device.salt, hasher=self.device.hash_algorithm
+            )
+        super().save(*args, **kwargs)
